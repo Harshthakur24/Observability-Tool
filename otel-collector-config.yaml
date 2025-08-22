@@ -1,0 +1,76 @@
+receivers:
+  otlp:
+    protocols:
+      grpc:
+        endpoint: 0.0.0.0:4317
+      http:
+        endpoint: 0.0.0.0:4318
+  prometheus:
+    config:
+      scrape_configs:
+        - job_name: 'otel-collector'
+          scrape_interval: 10s
+          static_configs:
+            - targets: ['0.0.0.0:8888']
+
+processors:
+  batch:
+    timeout: 1s
+    send_batch_size: 1024
+  memory_limiter:
+    limit_mib: 256
+  resource:
+    attributes:
+      - key: environment
+        value: "development"
+        action: insert
+      - key: service.version
+        value: "1.0.0"
+        action: insert
+
+exporters:
+  prometheus:
+    endpoint: "0.0.0.0:8889"
+    namespace: "observability_demo"
+    const_labels:
+      environment: "development"
+  
+  loki:
+    endpoint: "http://loki:3100/loki/api/v1/push"
+    labels:
+      attributes:
+        service.name: "service_name"
+        service.version: "service_version"
+  
+  tempo:
+    endpoint: "tempo:4317"
+    tls:
+      insecure: true
+  
+  logging:
+    loglevel: debug
+
+service:
+  extensions: []
+  
+  pipelines:
+    metrics:
+      receivers: [otlp, prometheus]
+      processors: [memory_limiter, resource, batch]
+      exporters: [prometheus, logging]
+    
+    logs:
+      receivers: [otlp]
+      processors: [memory_limiter, resource, batch]
+      exporters: [loki, logging]
+    
+    traces:
+      receivers: [otlp]
+      processors: [memory_limiter, resource, batch]
+      exporters: [tempo, logging]
+
+  telemetry:
+    logs:
+      level: "debug"
+    metrics:
+      address: 0.0.0.0:8888
